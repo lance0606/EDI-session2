@@ -1,0 +1,374 @@
+---
+title: "Q1"
+output: pdf_document
+date: "2023-07-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
+  true.param <- true.param
+  beta.p <- true.beta
+  M0 <- 2.5
+  T1 <- T1
+  T2 <- T2
+  # generate the catalogue - it returns a list of data.frames
+  synth.cat.list <- generate_temporal_ETAS_synthetic(
+    theta = true.param,
+    beta.p = beta.p,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    Ht = Ht,
+    ncore = 1
+  )
+  synth.cat.df <- do.call(rbind, synth.cat.list)
+  
+  # set copula transformations list
+  link.f <- list(
+    mu = \(x) gamma_t(x, 0.1, 0.1),
+    K = \(x) loggaus_t(x, -1, 2.03),
+    alpha = \(x) unif_t(x, 0, 10),
+    c_ = \(x) unif_t(x, 0, 10),
+    p = \(x) unif_t(x, 1, 10)
+  )
+  
+  # set inverse copula transformations list
+  inv.link.f <- list(
+    mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+    K = \(x) inv_loggaus_t(x, -1, 2.03),
+    alpha = \(x) inv_unif_t(x, 0, 10),
+    c_ = \(x) inv_unif_t(x, 0, 10),
+    p = \(x) inv_unif_t(x, 1, 10)
+  )
+  
+  # set up list of initial values
+  th.init <- list(
+    th.mu = inv.link.f$mu(0.5),
+    th.K = inv.link.f$K(0.1),
+    th.alpha = inv.link.f$alpha(1),
+    th.c = inv.link.f$c_(0.1),
+    th.p = inv.link.f$p(1.1)
+  )
+  
+  # set up list of bru options
+  bru.opt.list <- list(
+    bru_verbose = 0, # type of visual output
+    bru_max_iter = 70, # maximum number of iterations
+    # bru_method = list(max_step = 0.5),
+    bru_initial = th.init
+  ) # parameters initial values
+  
+  # sort catalogue by occurrence time
+  synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
+  # add event identifier
+  synth.cat.df$idx.p <- seq_len(nrow(synth.cat.df))
+  
+  synth.fit <- Temporal.ETAS(
+    total.data = synth.cat.df,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    link.functions = link.f,
+    coef.t. = 1,
+    delta.t. = 0.1,
+    N.max. = 5,
+    bru.opt = bru.opt.list
+  )
+  
+  # create input list to explore model output
+  input_list <- list(
+    model.fit = synth.fit,
+    link.functions = link.f
+  )
+  
+  post.list <- get_posterior_param(input.list = input_list)
+  post.list$post.df$cat.used <- itentifier
+  return(post.list)
+}
+```
+
+```{r}
+#explore the number of high magnitude events (same magnitude)
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.5
+T1 <- 0
+T2 <- 365
+
+Ht1<-NULL
+Ht2<-data.frame(ts = mean(c(T1, T2)),magnitudes = 4)
+Ht3<-data.frame(ts = sort(sample(T1:T2,2,replace = FALSE)),magnitudes = c(4,4))
+Ht4<-data.frame(ts = sort(sample(T1:T2,3,replace = FALSE)),magnitudes = c(4,4,4))
+Ht5<-data.frame(ts = sort(sample(T1:T2,4,replace = FALSE)),magnitudes = c(4,4,4,4))
+Ht6<-data.frame(ts = sort(sample(T1:T2,5,replace = FALSE)),magnitudes = c(4,4,4,4,4))
+
+post.list1<-generate_post.list(true.param,true.beta,T1,T2,Ht1,'0 high magnitude events')
+post.list2<-generate_post.list(true.param,true.beta,T1,T2,Ht2,'1 high magnitude events')
+post.list3<-generate_post.list(true.param,true.beta,T1,T2,Ht3,'2 high magnitude events')
+post.list4<-generate_post.list(true.param,true.beta,T1,T2,Ht4,'3 high magnitude events')
+post.list5<-generate_post.list(true.param,true.beta,T1,T2,Ht5,'4 high magnitude events')
+post.list6<-generate_post.list(true.param,true.beta,T1,T2,Ht6,'5 high magnitude events')
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df <- rbind(post.list1$post.df, post.list2$post.df,
+                      post.list3$post.df, post.list4$post.df,
+                      post.list5$post.df, post.list6$post.df)
+post.df.alpha <- bind.post.df[bind.post.df$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+#explore the number of different high magnitude events
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.5
+T1 <- 0
+T2 <- 365
+
+time <- sort(sample(T1:T2,5,replace = FALSE))
+Ht.1<-data.frame(ts = time,magnitudes = c(4,4,4,4,4))
+Ht.2<-data.frame(ts = time,magnitudes = c(4.5,4,4,4,4))
+Ht.3<-data.frame(ts = time,magnitudes = c(4,5,4.7,4,4))
+Ht.4<-data.frame(ts = time,magnitudes = c(4,4.5,5.5,4,4.8))
+Ht.5<-data.frame(ts = time,magnitudes = c(4.3,4,4.7,5,5.8))
+
+post.list.1<-generate_post.list(true.param,true.beta,T1,T2,Ht.1,'all same magnitude')
+post.list.2<-generate_post.list(true.param,true.beta,T1,T2,Ht.2,'one different')
+post.list.3<-generate_post.list(true.param,true.beta,T1,T2,Ht.3,'two different')
+post.list.4<-generate_post.list(true.param,true.beta,T1,T2,Ht.4,'three different')
+post.list.5<-generate_post.list(true.param,true.beta,T1,T2,Ht.5,'all different')
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df <- rbind(post.list.1$post.df, post.list.2$post.df,
+                      post.list.3$post.df, post.list.4$post.df,
+                      post.list.5$post.df)
+post.df.alpha <- bind.post.df[bind.post.df$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
+
+```{r}
+#1. 探究是否应该增加地震事件（不论增加的地震级数多少，增加多少个地震事件，
+#对于alpha的估计都应该比原始版本更好）
+#因此举以下几种例子：
+#  默认情况，没有增加任何地震事件
+#  增加一个震级为4的事件
+#  增加一个震级为6的事件
+#  增加两个事件，震级均为4.5
+
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.5
+T1 <- 0
+T2 <- 365
+
+Ht1.1 <- NULL
+Ht1.2 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 4)
+Ht1.3 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 6)
+Ht1.4 <- data.frame(ts = c(120,240),magnitudes = c(4.5,4.5))
+
+post.list1.1<-generate_post.list(true.param,true.beta,T1,T2,Ht1.1,'default')
+post.list1.2<-generate_post.list(true.param,true.beta,T1,T2,Ht1.2,'1 event with mangnitude=4')
+post.list1.3<-generate_post.list(true.param,true.beta,T1,T2,Ht1.3,'1 event with mangnitude=6')
+post.list1.4<-generate_post.list(true.param,true.beta,T1,T2,Ht1.4,'2 events with mangnitude=4.5')
+
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df1 <- rbind(post.list1.1$post.df, post.list1.2$post.df,
+                       post.list1.3$post.df, post.list1.4$post.df)
+post.df.alpha1 <- bind.post.df1[bind.post.df1$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+#结果可以反映几个问题：
+# 1. 加入额外的地震事件会对估计产生影响，但不都是正面影响，例如增加一个级别为6的地震事件反而使估计效果变差了
+# 2. 加入的事件数量也许会有影响
+# 3. 加入的事件级别也许会有影响
+# 4. 加入的事件中的级别是否各不相同
+```
+
+```{r}
+#加入的地震事件的数量的影响
+
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.5
+T1 <- 0
+T2 <- 365
+
+Ht2.1<-data.frame(ts = mean(c(T1, T2)),magnitudes = 6)
+Ht2.2<-data.frame(ts = sort(sample(T1:T2,2,replace = FALSE)),
+                  magnitudes = rep.int(4,2))
+Ht2.3<-data.frame(ts = sort(sample(T1:T2,3,replace = FALSE)),
+                magnitudes = rep.int(4,3))
+Ht2.4<-data.frame(ts = sort(sample(T1:T2,5,replace = FALSE)),
+                magnitudes = rep.int(4,5))
+Ht2.5<-data.frame(ts = sort(sample(T1:T2,8,replace = FALSE)),
+                magnitudes = rep.int(4,8))
+Ht2.6<-data.frame(ts = sort(sample(T1:T2,10,replace = FALSE)),
+                magnitudes = rep.int(4,10))
+
+post.list2.1<-generate_post.list(true.param,true.beta,T1,T2,Ht2.1,'1 high magnitude events')
+post.list2.2<-generate_post.list(true.param,true.beta,T1,T2,Ht2.2,'2 high magnitude events')
+post.list2.3<-generate_post.list(true.param,true.beta,T1,T2,Ht2.3,'3 high magnitude events')
+post.list2.4<-generate_post.list(true.param,true.beta,T1,T2,Ht2.4,'5 high magnitude events')
+post.list2.5<-generate_post.list(true.param,true.beta,T1,T2,Ht2.5,'8 high magnitude events')
+post.list2.6<-generate_post.list(true.param,true.beta,T1,T2,Ht2.6,'10 high magnitude events')
+
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df2 <- rbind(post.list2.1$post.df, post.list2.2$post.df,
+                       post.list2.3$post.df, post.list2.4$post.df,
+                       post.list2.5$post.df, post.list2.6$post.df)
+post.df.alpha2 <- bind.post.df2[bind.post.df2$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df2 <- rbind(post.list2.1$post.df, post.list2.2$post.df,
+                       post.list2.3$post.df, post.list2.4$post.df,
+                       post.list2.5$post.df, post.list2.6$post.df)
+post.df.alpha2 <- bind.post.df2[bind.post.df2$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+#震级是否各不相同
+
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.5
+T1 <- 0
+T2 <- 365
+
+time <- sort(sample(T1:T2,10,replace = FALSE))
+Ht3.1<-data.frame(ts = time,magnitudes = rep.int(3,10))
+Ht3.2<-data.frame(ts = time,magnitudes = rep.int(4.5,10))
+Ht3.3<-data.frame(ts = time,magnitudes = rep.int(6,10))
+Ht3.4<-data.frame(ts = time,magnitudes = runif(10,min=2.5,max=6))
+
+post.list3.1<-generate_post.list(true.param,true.beta,T1,T2,Ht3.1,'all same magnitude=3')
+post.list3.2<-generate_post.list(true.param,true.beta,T1,T2,Ht3.2,'all same magnitude=4.5')
+post.list3.3<-generate_post.list(true.param,true.beta,T1,T2,Ht3.3,'all same magnitude=6')
+post.list3.4<-generate_post.list(true.param,true.beta,T1,T2,Ht3.4,'all different magnitudes')
+
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df3 <- rbind(post.list3.1$post.df, post.list3.2$post.df
+                       , post.list3.4$post.df)
+post.df.alpha3 <- bind.post.df3[bind.post.df3$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha3, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
