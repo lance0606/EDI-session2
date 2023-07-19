@@ -1,0 +1,358 @@
+---
+title: "Q1"
+output: pdf_document
+date: "2023-07-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+library(extraDistr)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
+  true.param <- true.param
+  beta.p <- true.beta
+  M0 <- 2.5
+  T1 <- T1
+  T2 <- T2
+  # generate the catalogue - it returns a list of data.frames
+  synth.cat.list <- generate_temporal_ETAS_synthetic(
+    theta = true.param,
+    beta.p = beta.p,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    Ht = Ht,
+    ncore = 1
+  )
+  synth.cat.df <- do.call(rbind, synth.cat.list)
+  
+  # set copula transformations list
+  link.f <- list(
+    mu = \(x) gamma_t(x, 0.1, 0.1),
+    K = \(x) unif_t(x, 0, 10),
+    alpha = \(x) unif_t(x, 0, 10),
+    c_ = \(x) unif_t(x, 0, 10),
+    p = \(x) unif_t(x, 1, 10)
+  )
+  
+  # set inverse copula transformations list
+  inv.link.f <- list(
+    mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+    K = \(x) inv_unif_t(x, 0, 10),
+    alpha = \(x) inv_unif_t(x, 0, 10),
+    c_ = \(x) inv_unif_t(x, 0, 10),
+    p = \(x) inv_unif_t(x, 1, 10)
+  )
+  
+  # set up list of initial values
+  th.init <- list(
+    th.mu = inv.link.f$mu(0.5),
+    th.K = inv.link.f$K(0.1),
+    th.alpha = inv.link.f$alpha(1),
+    th.c = inv.link.f$c_(0.1),
+    th.p = inv.link.f$p(1.1)
+  )
+  
+  # set up list of bru options
+  bru.opt.list <- list(
+    bru_verbose = 0, # type of visual output
+    bru_max_iter = 70, # maximum number of iterations
+    # bru_method = list(max_step = 0.5),
+    bru_initial = th.init
+  ) # parameters initial values
+  
+  # sort catalogue by occurrence time
+  synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
+  # add event identifier
+  synth.cat.df$idx.p <- seq_len(nrow(synth.cat.df))
+  
+  synth.fit <- Temporal.ETAS(
+    total.data = synth.cat.df,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    link.functions = link.f,
+    coef.t. = 1,
+    delta.t. = 0.1,
+    N.max. = 5,
+    bru.opt = bru.opt.list
+  )
+  
+  # create input list to explore model output
+  input_list <- list(
+    model.fit = synth.fit,
+    link.functions = link.f
+  )
+  
+  post.list <- get_posterior_param(input.list = input_list)
+  post.list$post.df$cat.used <- itentifier
+  return(post.list)
+}
+```
+
+```{r}
+#问题：加入的地震事件的震级各不相同能使alpha的估计更准确
+#1. 探究是否应该增加地震事件（不论增加的地震级数多少，增加多少个地震事件，
+#对于alpha的估计都应该比原始版本更好）
+#因此举以下几种例子：
+#  默认情况，没有增加任何地震事件
+#  增加一个震级为4的事件
+#  增加一个震级为6的事件
+#  增加两个事件，震级均为4.5
+#2. 研究加入地震事件的数量的影响，为了尽可能消除震级的影响，对于加入的地震事件的震级，使其服从右半边正态分布随机生成
+#3. 研究震级的影响，在选定了合适的事件数量后，使加入的震级不同
+#4. 使加入的地震事件的震级各不相同
+#5. 加入的地震震级中是否包含一个6级及以上
+```
+
+```{r}
+#1
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+Ht1.1 <- NULL
+Ht1.2 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 4)
+Ht1.3 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 6)
+Ht1.4 <- data.frame(ts = c(120,240),magnitudes = c(4.5,4.5))
+
+post.list1.1<-generate_post.list(true.param,true.beta,T1,T2,Ht1.1,'default')
+post.list1.2<-generate_post.list(true.param,true.beta,T1,T2,Ht1.2,'1 event with mangnitude=4')
+post.list1.3<-generate_post.list(true.param,true.beta,T1,T2,Ht1.3,'1 event with mangnitude=6')
+post.list1.4<-generate_post.list(true.param,true.beta,T1,T2,Ht1.4,'2 events with mangnitude=4.5')
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.4,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df1 <- rbind(post.list1.1$post.df, post.list1.2$post.df,
+                       post.list1.3$post.df, post.list1.4$post.df)
+post.df.alpha1 <- bind.post.df1[bind.post.df1$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+summary(post.list1.1$post.df[post.list1.1$post.df$param=='alpha',]$x)
+summary(post.list1.2$post.df[post.list1.2$post.df$param=='alpha',]$x)
+summary(post.list1.3$post.df[post.list1.3$post.df$param=='alpha',]$x)
+summary(post.list1.4$post.df[post.list1.4$post.df$param=='alpha',]$x)
+```
+
+```{r}
+#2
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+Ht2.1<-data.frame(ts = mean(c(T1, T2)),magnitudes = rhnorm(1,1)+2.5)
+Ht2.2<-data.frame(ts = sort(sample(T1:T2,2,replace = FALSE)),
+                  magnitudes = rhnorm(2,1)+2.5)
+Ht2.3<-data.frame(ts = sort(sample(T1:T2,3,replace = FALSE)),
+                magnitudes = rhnorm(3,1)+2.5)
+Ht2.4<-data.frame(ts = sort(sample(T1:T2,4,replace = FALSE)),
+                magnitudes = rhnorm(4,1)+2.5)
+Ht2.5<-data.frame(ts = sort(sample(T1:T2,5,replace = FALSE)),
+                magnitudes = rhnorm(5,1)+2.5)
+Ht2.6<-data.frame(ts = sort(sample(T1:T2,6,replace = FALSE)),
+                magnitudes = rhnorm(6,1)+2.5)
+Ht2.7<-data.frame(ts = sort(sample(T1:T2,8,replace = FALSE)),
+                magnitudes = rhnorm(8,1)+2.5)
+Ht2.8<-data.frame(ts = sort(sample(T1:T2,10,replace = FALSE)),
+                magnitudes = rhnorm(10,1)+2.5)
+Ht2.9<-data.frame(ts = sort(sample(T1:T2,12,replace = FALSE)),
+                magnitudes = rhnorm(12,1)+2.5)
+
+post.list2.1<-generate_post.list(true.param,true.beta,T1,T2,Ht2.1,'1 high magnitude events')
+post.list2.2<-generate_post.list(true.param,true.beta,T1,T2,Ht2.2,'2 high magnitude events')
+post.list2.3<-generate_post.list(true.param,true.beta,T1,T2,Ht2.3,'3 high magnitude events')
+post.list2.4<-generate_post.list(true.param,true.beta,T1,T2,Ht2.4,'4 high magnitude events')
+post.list2.5<-generate_post.list(true.param,true.beta,T1,T2,Ht2.5,'5 high magnitude events')
+post.list2.6<-generate_post.list(true.param,true.beta,T1,T2,Ht2.6,'6 high magnitude events')
+post.list2.7<-generate_post.list(true.param,true.beta,T1,T2,Ht2.6,'8 high magnitude events')
+post.list2.8<-generate_post.list(true.param,true.beta,T1,T2,Ht2.6,'10 high magnitude events')
+post.list2.9<-generate_post.list(true.param,true.beta,T1,T2,Ht2.6,'12 high magnitude events')
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df2 <- rbind(post.list2.1$post.df, post.list2.2$post.df,
+                       post.list2.3$post.df, post.list2.4$post.df,
+                       post.list2.5$post.df, post.list2.6$post.df,
+                       post.list2.7$post.df, post.list2.8$post.df,
+                       post.list2.9$post.df)
+post.df.alpha2 <- bind.post.df2[bind.post.df2$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+从结果看，加入事件的数量的影响比较随机，总的来说不能太少也不能太多，单从上图看，选择n=5还算不错。
+
+```{r}
+#3
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+time <- sort(sample(T1:T2,5,replace = FALSE))
+Ht3.1<-data.frame(ts = time,magnitudes = rep.int(3,5))
+Ht3.2<-data.frame(ts = time,magnitudes = rep.int(4,5))
+Ht3.3<-data.frame(ts = time,magnitudes = rep.int(4.5,5))
+Ht3.4<-data.frame(ts = time,magnitudes = rep.int(5,5))
+Ht3.5<-data.frame(ts = time,magnitudes = rep.int(6,5))
+Ht3.6<-data.frame(ts = time,magnitudes = rep.int(6.9,5))
+
+post.list3.1<-generate_post.list(true.param,true.beta,T1,T2,Ht3.1,'magnitude=3')
+post.list3.2<-generate_post.list(true.param,true.beta,T1,T2,Ht3.2,'magnitude=4')
+post.list3.3<-generate_post.list(true.param,true.beta,T1,T2,Ht3.3,'magnitude=4.5')
+post.list3.4<-generate_post.list(true.param,true.beta,T1,T2,Ht3.4,'magnitude=5')
+post.list3.5<-generate_post.list(true.param,true.beta,T1,T2,Ht3.5,'magnitude=6')
+post.list3.6<-generate_post.list(true.param,true.beta,T1,T2,Ht3.6,'magnitude=6.9')
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df3 <- rbind(post.list3.1$post.df, post.list3.2$post.df,
+                       post.list3.3$post.df, post.list3.4$post.df,
+                       post.list3.5$post.df)
+post.df.alpha3 <- bind.post.df3[bind.post.df3$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha3, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+上图表示实验了多种情况，现象是震级越高，运行越慢，因此太大的震级不应过多，毕竟现实情况下6级的大震非常稀有。从图中还可以发现，震级在4-5之间的效果最好。
+
+```{r}
+set.seed(2)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+time <- sort(sample(T1:T2,5,replace = FALSE))
+random_mag <- rhnorm(5,2)+2.5
+Ht4.1<-data.frame(ts = time,magnitudes = rep.int(4,5))
+Ht4.2<-data.frame(ts = time,magnitudes = rep.int(4.5,5))
+Ht4.3<-data.frame(ts = time,magnitudes = rep.int(5,5))
+Ht4.4<-data.frame(ts = time,magnitudes = random_mag)
+
+post.list4.1<-generate_post.list(true.param,true.beta,T1,T2,Ht4.1,'same magnitude=4')
+post.list4.2<-generate_post.list(true.param,true.beta,T1,T2,Ht4.2,'same magnitude=4.5')
+post.list4.3<-generate_post.list(true.param,true.beta,T1,T2,Ht4.3,'same magnitude=5')
+post.list4.4<-generate_post.list(true.param,true.beta,T1,T2,Ht4.4,'all different')
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df4 <- rbind(post.list4.1$post.df, post.list4.2$post.df,
+                       post.list4.3$post.df, post.list4.4$post.df)
+post.df.alpha4 <- bind.post.df4[bind.post.df4$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha4, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+summary(post.list4.1$post.df[post.list4.1$post.df$param=='alpha',]$x)
+summary(post.list4.2$post.df[post.list4.2$post.df$param=='alpha',]$x)
+summary(post.list4.3$post.df[post.list4.3$post.df$param=='alpha',]$x)
+summary(post.list4.4$post.df[post.list4.4$post.df$param=='alpha',]$x)
+```
+
+从上图结果可以看出，加入的事件的震级各不相同对于alpha的估计更准确
+
+```{r}
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+time <- sort(sample(T1:T2,5,replace = FALSE))
+Ht5.1<-data.frame(ts = time,magnitudes = c(3,5,4.6,4.3,4.25))
+Ht5.2<-data.frame(ts = time,magnitudes = c(3,5,4.6,4.3,6.2))
+Ht5.3<-data.frame(ts = time,magnitudes = c(3,6,4.6,4.3,6.2))
+
+post.list5.1<-generate_post.list(true.param,true.beta,T1,T2,Ht5.1,'all < 5.4')
+post.list5.2<-generate_post.list(true.param,true.beta,T1,T2,Ht5.2,'one > 6')
+post.list5.3<-generate_post.list(true.param,true.beta,T1,T2,Ht5.3,'two > 6')
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df5 <- rbind(post.list5.1$post.df, post.list5.2$post.df,
+                       post.list5.3$post.df)
+post.df.alpha5 <- bind.post.df5[bind.post.df5$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha5, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+因此，为了得到最好的alpha估计，我们可以选择在时间序列中加入5或10个互不相同的地震事件，并且其中至少有一个大于等于6级，但大部分应保持在2.5-5.4之间。
