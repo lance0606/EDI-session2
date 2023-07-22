@@ -34,11 +34,11 @@ horus$time_date <- as.POSIXct(
 horus <- na.omit(horus)
 
 # set up parameters for selection
-start.date <- as.POSIXct("2009-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
-end.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
-min.longitude <- 10.5
-max.longitude <- 16
-min.latitude <- 40.5
+start.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+end.date <- as.POSIXct("2011-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+min.longitude <- 10
+max.longitude <- 15
+min.latitude <- 40
 max.latitude <- 45
 M0 <- 2.5
 
@@ -139,7 +139,7 @@ beta.p <- 1 / (mean(aquila.bru$magnitudes) - M0)
 
 ```{r}
 set.seed(1)
-n.cat <- 100
+n.cat <- 1000
 # generate catalogues as list of lists
 multi.synth.cat.list <- lapply(seq_len(n.cat), \(x)
 generate_temporal_ETAS_synthetic(
@@ -159,12 +159,53 @@ time.between.events.df <- lapply(multi.synth.cat.list.df, \(x) diff(x[x$gen==1,]
 
 ```{r}
 time.between.events.real<-diff(aquila.bru$ts)
-plot(density(time.between.events.real))
+plot(density(time.between.events.real),
+     main='Distribution of time between events in real data',
+     xlab='time between evetns')
 ```
 
 ```{r}
-plot(density(time.between.events.df[[1]]))
-for (i in 2:100) {
+plot(density(time.between.events.df[[1]]),
+     main='Distribution of time between events in synthetic data',
+     xlab='time between evetns',ylim=c(0,0.3))
+for (i in 2:1000) {
   lines(density(time.between.events.df[[i]]))
 }
+```
+
+```{r}
+set.seed(111)
+true.param<-list(mu=mean(post.samp$mu), K=mean(post.samp$K), 
+            alpha=mean(post.samp$alpha), c=mean(post.samp$c),p=mean(post.samp$p))
+# generate the catalogue - it returns a list of data.frames
+synth.catalogue <- generate_temporal_ETAS_synthetic(
+  theta = true.param,
+  beta.p = beta.p,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  Ht = NULL,
+  ncore = 1
+)
+synth.cat.df <- do.call(rbind, synth.catalogue)
+synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
+```
+
+```{r}
+time.between.events.synth<-diff(synth.cat.df[synth.cat.df$gen==1,]$ts)
+plot(density(time.between.events.synth),
+     main='Distribution of time between events in synthetic data',
+     xlab='time between evetns')
+```
+
+```{r}
+
+real<-data.frame(real=time.between.events.real)
+synth<-data.frame(synth=time.between.events.synth)
+ggplot() + 
+  geom_density(aes(real,fill='real'),alpha=0.5,data=real)+
+  geom_density(aes(synth,fill='synth'),alpha=0.5,data=synth)+
+  scale_fill_manual(name = 'data', 
+                    values = c(real = "red", synth = "green"))+
+  xlab('time between events')
 ```
