@@ -1,0 +1,127 @@
+---
+title: "Q3"
+output: pdf_document
+date: "2023-07-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+library(extraDistr)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+n.cat<-5
+set.seed(1)
+true.param <- data.frame(mu=runif(n.cat,0,0.4),K=runif(n.cat,0,0.3),
+                  alpha=runif(n.cat,0,2.5),c=runif(n.cat,0,0.3),p=runif(n.cat,1,5))
+beta.p <- 2.4
+M0 <- 2.5
+T1 <- 0
+T2 <- 365
+  
+# generate catalogues as list of lists
+synth.list <- lapply(seq_len(n.cat), \(x)
+generate_temporal_ETAS_synthetic(
+  theta = true.param[x, ],
+  beta.p = beta.p,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  Ht = NULL
+))
+
+# store catalogues as list of data.frames
+synth.df <- lapply(synth.list, \(x) do.call(rbind, x))
+synth.df <- lapply(synth.df, \(x) x[order(x$ts), ])
+synth.df <- lapply(synth.df, function(x) {
+  names(x)[3]<-'idx.p' 
+  x[,'idx.p']<-1:nrow(x) 
+  x 
+})
+```
+
+```{r}
+# set copula transformations list
+link.f <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) unif_t(x, 0, 10),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+
+# set inverse copula transformations list
+inv.link.f <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_unif_t(x, 0, 10),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+# set up list of initial values
+th.init <- list(
+  th.mu = inv.link.f$mu(0.5),
+  th.K = inv.link.f$K(0.1),
+  th.alpha = inv.link.f$alpha(1),
+  th.c = inv.link.f$c_(0.1),
+  th.p = inv.link.f$p(1.1)
+)
+
+# set up list of bru options
+bru.opt.list <- list(
+  bru_verbose = 0, # type of visual output
+  bru_max_iter = 70, # maximum number of iterations
+  # bru_method = list(max_step = 0.5),
+  bru_initial = th.init # parameters' initial values
+)
+
+fit.model<-lapply(seq_len(n.cat), \(x)
+Temporal.ETAS(
+  total.data = synth.df[x][[1]],
+  M0 = M0,
+  T1 = T1,
+  T2 = max(synth.df[x][[1]]$ts,na.rm = TRUE)+0.2,
+  link.functions = link.f,
+  coef.t. = 1,
+  delta.t. = 0.1,
+  N.max. = 5,
+  bru.opt = bru.opt.list
+))
+```
+
+```{r}
+input_list<-lapply(seq_len(n.cat), \(x)
+  list(
+    model.fit = fit.model[x][[1]],
+    link.functions = link.f,
+    T12 = c(T1,T2),
+    M0 = M0,
+    catalog.bru = synth.df[x][[1]]
+))
+```
+
+```{r}
+N.post.list<-lapply(seq_len(n.cat), \(x)
+  get_posterior_N(input.list = input_list[x][[1]])
+)
+```
+
+```{r}
+N.post.list[[1]]$post.plot
+N.post.list[[2]]$post.plot
+N.post.list[[3]]$post.plot
+N.post.list[[4]]$post.plot
+N.post.list[[5]]$post.plot
+```
