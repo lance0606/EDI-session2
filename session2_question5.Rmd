@@ -154,7 +154,7 @@ generate_temporal_ETAS_synthetic(
 # store catalogues as list of data.frames
 multi.synth.cat.list.df <- lapply(multi.synth.cat.list, \(x) do.call(rbind, x))
 multi.synth.cat.list.df <- lapply(multi.synth.cat.list.df, \(x) x[order(x$ts), ])
-time.between.events.df <- lapply(multi.synth.cat.list.df, \(x) diff(x[x$gen==1,]$ts))
+time.between.events.df <- lapply(multi.synth.cat.list.df, \(x) diff(x$ts))
 ```
 
 ```{r}
@@ -167,7 +167,7 @@ plot(density(time.between.events.real),
 ```{r}
 plot(density(time.between.events.df[[1]]),
      main='Distribution of time between events in synthetic data',
-     xlab='time between evetns',ylim=c(0,0.3))
+     xlab='time between evetns',ylim=c(0,1.5))
 for (i in 2:1000) {
   lines(density(time.between.events.df[[i]]))
 }
@@ -192,7 +192,7 @@ synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
 ```
 
 ```{r}
-time.between.events.synth<-diff(synth.cat.df[synth.cat.df$gen==1,]$ts)
+time.between.events.synth<-diff(synth.cat.df$ts)
 plot(density(time.between.events.synth),
      main='Distribution of time between events in synthetic data',
      xlab='time between evetns')
