@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(ETAS.inlabru)
 library(ggplot2)
+library(extraDistr)
+library(ggpubr)
 
 # Increase num.cores if you have more cores on your computer, and reduce it
 # if you have fewer!
@@ -138,7 +140,7 @@ post.list1.4<-generate_post.list(true.param,true.beta,T1,T2,Ht1.4,'2 events with
 ```{r}
 # create data.frame of true value of parameters
 df.true.param <- data.frame(
-  x = 2.4,
+  x = 2.5,
   param = 'alpha'
 )
 
@@ -201,10 +203,15 @@ bind.post.df.g1 <- rbind(post.list.g1[[1]]$post.df,post.list.g1[[2]]$post.df,
                          post.list.g1[[5]]$post.df,post.list.g1[[6]]$post.df,
                          post.list.g1[[7]]$post.df,post.list.g1[[8]]$post.df,
                          post.list.g1[[9]]$post.df,post.list.g1[[10]]$post.df)
+bind.post.df.g1.good <- rbind(post.list.g1[[3]]$post.df,post.list.g1[[4]]$post.df,
+                            post.list.g1[[5]]$post.df,post.list.g1[[6]]$post.df,
+                            post.list.g1[[8]]$post.df)
+
 post.df.alpha.g1 <- bind.post.df.g1[bind.post.df.g1$param=='alpha',]
+post.df.alpha.g1.good <- bind.post.df.g1.good[bind.post.df.g1.good$param=='alpha',]
 
 # plot them
-ggplot(post.df.alpha.g1, aes(x = x, y = y, color = cat.used)) +
+gg1<-ggplot(post.df.alpha.g1, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
   facet_wrap(facets = ~param, scales = "free") +
   xlab("param") +
@@ -213,6 +220,18 @@ ggplot(post.df.alpha.g1, aes(x = x, y = y, color = cat.used)) +
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
   )
+
+gg2<-ggplot(post.df.alpha.g1.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```
 
 ```{r}
@@ -235,10 +254,13 @@ bind.post.df.g2 <- rbind(post.list.g2[[1]]$post.df,post.list.g2[[2]]$post.df,
                          post.list.g2[[5]]$post.df,post.list.g2[[6]]$post.df,
                          post.list.g2[[7]]$post.df,post.list.g2[[8]]$post.df,
                          post.list.g2[[9]]$post.df,post.list.g2[[10]]$post.df)
+bind.post.df.g2.good <- rbind(post.list.g2[[5]]$post.df,post.list.g2[[9]]$post.df)
+
 post.df.alpha.g2 <- bind.post.df.g2[bind.post.df.g2$param=='alpha',]
+post.df.alpha.g2.good <- bind.post.df.g2.good[bind.post.df.g2.good$param=='alpha',]
 
 # plot them
-ggplot(post.df.alpha.g2, aes(x = x, y = y, color = cat.used)) +
+gg1<-ggplot(post.df.alpha.g2, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
   facet_wrap(facets = ~param, scales = "free") +
   xlab("param") +
@@ -247,6 +269,18 @@ ggplot(post.df.alpha.g2, aes(x = x, y = y, color = cat.used)) +
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
   )
+
+gg2<-ggplot(post.df.alpha.g2.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```
 
 ```{r}
@@ -269,10 +303,14 @@ bind.post.df.g3 <- rbind(post.list.g3[[1]]$post.df,post.list.g3[[2]]$post.df,
                          post.list.g3[[5]]$post.df,post.list.g3[[6]]$post.df,
                          post.list.g3[[7]]$post.df,post.list.g3[[8]]$post.df,
                          post.list.g3[[9]]$post.df,post.list.g3[[10]]$post.df)
+bind.post.df.g3.good <- rbind(post.list.g3[[6]]$post.df,post.list.g3[[7]]$post.df,
+                            post.list.g3[[8]]$post.df,post.list.g3[[9]]$post.df)
+
 post.df.alpha.g3 <- bind.post.df.g3[bind.post.df.g3$param=='alpha',]
+post.df.alpha.g3.good <- bind.post.df.g3.good[bind.post.df.g3.good$param=='alpha',]
 
 # plot them
-ggplot(post.df.alpha.g3, aes(x = x, y = y, color = cat.used)) +
+gg1<-ggplot(post.df.alpha.g3, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
   facet_wrap(facets = ~param, scales = "free") +
   xlab("param") +
@@ -281,17 +319,29 @@ ggplot(post.df.alpha.g3, aes(x = x, y = y, color = cat.used)) +
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
   )
+
+gg2<-ggplot(post.df.alpha.g3.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```
 
 ```{r}
 #group4
 set.seed(1)
 
-Ht.list.g4<-lapply(seq_len(10),\(x)
+Ht.list.g4<-lapply(seq_len(3),\(x)
   data.frame(ts = sort(sample(T1:T2,x,replace = FALSE)),magnitudes = rep(6,x))
 )
 
-post.list.g4<-lapply(seq_len(10),\(x)
+post.list.g4<-lapply(seq_len(3),\(x)
   generate_post.list(true.param,true.beta,T1,T2,Ht.list.g4[[x]],identifier[x])
 )
 ```
@@ -299,10 +349,7 @@ post.list.g4<-lapply(seq_len(10),\(x)
 ```{r}
 # bind marginal posterior data.frames
 bind.post.df.g4 <- rbind(post.list.g4[[1]]$post.df,post.list.g4[[2]]$post.df,
-                         post.list.g4[[3]]$post.df,post.list.g4[[4]]$post.df,
-                         post.list.g4[[5]]$post.df,post.list.g4[[6]]$post.df,
-                         post.list.g4[[7]]$post.df,post.list.g4[[8]]$post.df,
-                         post.list.g4[[9]]$post.df,post.list.g4[[10]]$post.df)
+                         post.list.g4[[3]]$post.df)
 post.df.alpha.g4 <- bind.post.df.g4[bind.post.df.g4$param=='alpha',]
 
 # plot them
@@ -315,4 +362,124 @@ ggplot(post.df.alpha.g4, aes(x = x, y = y, color = cat.used)) +
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
   )
+```
+
+```{r}
+#3
+identifier<-c('all magnitude=3','all magnitude=4','all magnitude=5',
+              'all different between 2.5 and 5.4',
+              'all different at least one>6')
+post.list.s3<-list()
+for (i in 3:10) {
+  set.seed(1)
+  ts<-sort(sample(T1:T2,i,replace = FALSE))
+  rand.mag<-runif(i,2.5,5.4)
+  rand.mag6<-replace(rand.mag,2,6)
+  Ht.list<-list(
+    data.frame(ts = ts,magnitudes = rep(3,i)),
+    data.frame(ts = ts,magnitudes = rep(4,i)),
+    data.frame(ts = ts,magnitudes = rep(5,i)),
+    data.frame(ts = ts,magnitudes = rand.mag),
+    data.frame(ts = ts,magnitudes = rand.mag6)
+  )
+  post.list<-lapply(seq_len(5),\(x)
+    generate_post.list(true.param,true.beta,T1,T2,Ht.list[[x]],identifier[x])
+  )
+  post.list.s3<-append(post.list.s3,post.list)
+}
+```
+
+```{r}
+# bind marginal posterior data.frames
+post.df.alpha.list<-list()
+for (j in seq(1,40,5)) {
+  bind.post.df <- rbind(post.list.s3[[j]]$post.df,post.list.s3[[j+1]]$post.df,
+                        post.list.s3[[j+2]]$post.df,post.list.s3[[j+3]]$post.df,
+                        post.list.s3[[j+4]]$post.df)
+  post.df.alpha <- bind.post.df[bind.post.df$param=='alpha',]
+  post.df.alpha.list<-append(post.df.alpha.list,list(post.df.alpha))
+}
+
+# plot them
+gg1<-ggplot(post.df.alpha.list[[1]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.alpha.list[[2]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg3<-ggplot(post.df.alpha.list[[3]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg4<-ggplot(post.df.alpha.list[[4]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg5<-ggplot(post.df.alpha.list[[5]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg6<-ggplot(post.df.alpha.list[[6]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg7<-ggplot(post.df.alpha.list[[7]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg8<-ggplot(post.df.alpha.list[[8]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7,gg8,ncol=2,nrow=4,align='hv',common.legend = TRUE)
 ```
