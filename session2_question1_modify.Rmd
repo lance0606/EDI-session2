@@ -219,7 +219,9 @@ gg1<-ggplot(post.df.alpha.g1, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 4.5, y = 12.5, label = "All Cases")+
+  annotate("rect", xmin = 4.3, xmax = 4.7, ymin = 12, ymax = 13,alpha = .2)
 
 gg2<-ggplot(post.df.alpha.g1.good, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -229,7 +231,9 @@ gg2<-ggplot(post.df.alpha.g1.good, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3, y = 15, label = "Good Cases")+
+  annotate("rect", xmin = 2.92, xmax = 3.08, ymin = 14.5, ymax = 15.5,alpha = .2)
 
 ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```
@@ -250,11 +254,12 @@ post.list.g2<-lapply(seq_len(10),\(x)
 ```{r}
 # bind marginal posterior data.frames
 bind.post.df.g2 <- rbind(post.list.g2[[1]]$post.df,post.list.g2[[2]]$post.df,
-                         post.list.g2[[3]]$post.df,post.list.g2[[4]]$post.df,
-                         post.list.g2[[5]]$post.df,post.list.g2[[6]]$post.df,
-                         post.list.g2[[7]]$post.df,post.list.g2[[8]]$post.df,
-                         post.list.g2[[9]]$post.df,post.list.g2[[10]]$post.df)
-bind.post.df.g2.good <- rbind(post.list.g2[[5]]$post.df,post.list.g2[[9]]$post.df)
+                         post.list.g2[[4]]$post.df,post.list.g2[[5]]$post.df,
+                         post.list.g2[[6]]$post.df,post.list.g2[[7]]$post.df,
+                         post.list.g2[[8]]$post.df,post.list.g2[[9]]$post.df,
+                         post.list.g2[[10]]$post.df)
+bind.post.df.g2.good <- rbind(post.list.g2[[3]]$post.df,post.list.g2[[5]]$post.df,
+                              post.list.g2[[9]]$post.df)
 
 post.df.alpha.g2 <- bind.post.df.g2[bind.post.df.g2$param=='alpha',]
 post.df.alpha.g2.good <- bind.post.df.g2.good[bind.post.df.g2.good$param=='alpha',]
@@ -268,7 +273,9 @@ gg1<-ggplot(post.df.alpha.g2, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3.5, y = 10.5, label = "All Cases")+
+  annotate("rect", xmin = 3.35, xmax = 3.65, ymin = 10, ymax = 11,alpha = .2)
 
 gg2<-ggplot(post.df.alpha.g2.good, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -278,7 +285,9 @@ gg2<-ggplot(post.df.alpha.g2.good, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 2.875, y = 10.5, label = "Good Cases")+
+  annotate("rect", xmin = 2.82, xmax = 2.93, ymin = 10, ymax = 11,alpha = .2)
 
 ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```
@@ -304,7 +313,7 @@ bind.post.df.g3 <- rbind(post.list.g3[[1]]$post.df,post.list.g3[[2]]$post.df,
                          post.list.g3[[7]]$post.df,post.list.g3[[8]]$post.df,
                          post.list.g3[[9]]$post.df,post.list.g3[[10]]$post.df)
 bind.post.df.g3.good <- rbind(post.list.g3[[6]]$post.df,post.list.g3[[7]]$post.df,
-                            post.list.g3[[8]]$post.df,post.list.g3[[9]]$post.df)
+                              post.list.g3[[8]]$post.df,post.list.g3[[10]]$post.df)
 
 post.df.alpha.g3 <- bind.post.df.g3[bind.post.df.g3$param=='alpha',]
 post.df.alpha.g3.good <- bind.post.df.g3.good[bind.post.df.g3.good$param=='alpha',]
@@ -318,7 +327,9 @@ gg1<-ggplot(post.df.alpha.g3, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3, y = 10.5, label = "All Cases")+
+  annotate("rect", xmin = 2.93, xmax = 3.07, ymin = 10, ymax = 11,alpha = .2)
 
 gg2<-ggplot(post.df.alpha.g3.good, aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -328,7 +339,9 @@ gg2<-ggplot(post.df.alpha.g3.good, aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 2.8, y = 10.5, label = "Good Cases")+
+  annotate("rect", xmin = 2.76, xmax = 2.84, ymin = 10, ymax = 11,alpha = .2)
 
 ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
 ```

@@ -1,0 +1,216 @@
+---
+title: "Q4"
+output: pdf_document
+date: "2023-07-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+library(extraDistr)
+library(ggpubr)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+#获得实际数据
+# transform time string in Date object
+horus$time_date <- as.POSIXct(
+  horus$time_string,
+  format = "%Y-%m-%dT%H:%M:%OS"
+)
+# There may be some incorrectly registered data-times in the original data set,
+# that as.POSIXct() can't convert, depending on the system.
+# These should ideally be corrected, but for now, we just remove the rows that
+# couldn't be converted.
+horus <- na.omit(horus)
+
+# set up parameters for selection
+start.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+end.date <- as.POSIXct("2011-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+min.longitude <- 10
+max.longitude <- 15
+min.latitude <- 40
+max.latitude <- 45
+M0 <- 2.5
+
+# set up conditions for selection
+aquila.sel <- (horus$time_date >= start.date) &
+  (horus$time_date < end.date) &
+  (horus$lon >= min.longitude) &
+  (horus$lon <= max.longitude) &
+  (horus$lat >= min.latitude) &
+  (horus$lat <= max.latitude) &
+  (horus$M >= M0)
+
+# select
+aquila <- horus[aquila.sel, ]
+
+# set up data.frame for model fitting
+aquila.bru <- data.frame(
+  ts = as.numeric(
+    difftime(aquila$time_date, start.date, units = "days")
+  ),
+  magnitudes = aquila$M,
+  idx.p = 1:nrow(aquila)
+)
+```
+
+```{r}
+#用实际数据拟合模型
+# set copula transformations list
+link.f <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) unif_t(x, 0, 10),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+
+# set inverse copula transformations list
+inv.link.f <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_unif_t(x, 0, 10),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+# set up list of initial values
+th.init <- list(
+  th.mu = inv.link.f$mu(0.5),
+  th.K = inv.link.f$K(0.1),
+  th.alpha = inv.link.f$alpha(1),
+  th.c = inv.link.f$c_(0.1),
+  th.p = inv.link.f$p(1.1)
+)
+
+# set up list of bru options
+bru.opt.list <- list(
+  bru_verbose = 0, # type of visual output
+  bru_max_iter = 70, # maximum number of iterations
+  # bru_method = list(max_step = 0.5),
+  bru_initial = th.init # parameters' initial values
+)
+
+# set starting and time of the time interval used for model fitting. In this case, we use the interval covered by the data.
+T1 <- 0
+T2 <- max(aquila.bru$ts) + 0.2 # Use max(..., na.rm = TRUE) if there may still be NAs here
+# fit the model
+aquila.fit <- Temporal.ETAS(
+  total.data = aquila.bru,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  link.functions = link.f,
+  coef.t. = 1,
+  delta.t. = 0.1,
+  N.max. = 5,
+  bru.opt = bru.opt.list
+)
+```
+
+```{r}
+#用拟合后的模型生成多组参数
+# create input list to explore model output
+input_list <- list(
+  model.fit = aquila.fit,
+  link.functions = link.f
+)
+
+post.samp <- post_sampling(
+  input.list = input_list,
+  n.samp = 1000,
+  max.batch = 1000,
+  ncore = num.cores
+)
+
+# maximum likelihood estimator for beta
+beta.p <- 1 / (mean(aquila.bru$magnitudes) - M0)
+```
+
+```{r}
+# express 1 minute in days
+min.in.days <- 1 / (24 * 60)
+# find time of the event with the greatest magnitude
+t.max.mag <- aquila.bru$ts[which.max(aquila.bru$magnitudes)]
+# set starting time of the forecasting period
+T1.fore <- t.max.mag + min.in.days
+T1.fore.list <- seq(T1.fore,T1.fore*9,10)
+# set forecast length
+fore.length <- 10
+# set end time of the forecasting period
+T2.fore <- T1.fore + fore.length
+T2.fore.list <- T1.fore.list+10
+# set known data
+Ht.fore <- aquila.bru[aquila.bru$ts < T1.fore, ]
+Ht.fore.list <- lapply(seq_len(9),\(x) 
+                       aquila.bru[aquila.bru$ts < T1.fore.list[x], ])
+
+# produce forecast
+daily.fore.list <- lapply(seq_len(9),\(x) 
+  Temporal.ETAS.forecast(
+    post.samp = post.samp, # ETAS parameters posterior samples
+    n.cat = nrow(post.samp), # number of synthetic catalogues
+    beta.p = beta.p, # magnitude distribution parameter
+    M0 = M0, # cutoff magnitude
+    T1 = T1.fore.list[x], # forecast starting time
+    T2 = T2.fore.list[x], # forecast end time
+    Ht = Ht.fore.list[[x]], # known events
+    ncore = 1)
+  ) 
+```
+
+```{r}
+N.fore.list <- lapply(seq_len(9),\(x) 
+                 vapply(seq_len(daily.fore.list[[x]]$n.cat),\(y) 
+                        sum(daily.fore.list[[x]]$fore.df$cat.idx == y), 0))
+N.obs.list <- lapply(seq_len(9),\(x)
+      sum(aquila.bru$ts >= T1.fore.list[[x]] & aquila.bru$ts <= T2.fore.list[[x]]))
+
+gg<-lapply(seq_len(9),\(x) 
+  ggplot() +
+  geom_histogram(aes(x=N.fore.list[[x]], y=after_stat(density)), binwidth = 0.5) +
+  geom_vline(xintercept = N.obs.list[[x]],color='red') + xlim(0,50))
+
+ggarrange(gg[[1]],gg[[2]],gg[[3]],gg[[4]],gg[[5]],gg[[6]],gg[[7]],gg[[8]],gg[[9]],ncol=3,nrow=3,align='hv',common.legend = TRUE)
+```
+
+```{r}
+set.seed(1)
+# produce forecast
+daily.fore <- Temporal.ETAS.forecast(
+  post.samp = post.samp, # ETAS parameters posterior samples
+  n.cat = nrow(post.samp), # number of synthetic catalogues
+  beta.p = beta.p, # magnitude distribution parameter
+  M0 = M0, # cutoff magnitude
+  T1 = T1.fore.list[9], # forecast starting time
+  T2 = T2.fore.list[9], # forecast end time
+  Ht = Ht.fore.list[[9]], # known events
+  ncore = 1
+) # number of cores
+```
+
+```{r}
+# find number of events per catalogue
+N.fore <- vapply(
+  seq_len(daily.fore$n.cat),
+  \(x) sum(daily.fore$fore.df$cat.idx == x), 0
+)
+# find number of observed events in the forecasting period
+N.obs <- sum(aquila.bru$ts >= T1.fore & aquila.bru$ts <= T2.fore)
+# plot the distribution
+ggplot() +
+  geom_histogram(aes(x = N.fore, y = after_stat(density)), binwidth = 0.5) +
+  geom_vline(xintercept = N.obs) +
+  xlim(0,100)
+```
