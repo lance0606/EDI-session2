@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(ETAS.inlabru)
 library(ggplot2)
 library(extraDistr)
+library(ggpubr)
 
 # Increase num.cores if you have more cores on your computer, and reduce it
 # if you have fewer!
@@ -695,10 +696,184 @@ post.list_mis.alpha<-generate_post.list(true.param,true.beta,T1,T2,
 ```
 
 ```{r}
+#mis-specify mu to 0.7
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.mu <- list(
+  mu = \(x) gamma_t(x, 0.7*10000, 10000),
+  K = \(x) unif_t(x, 0, 10),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.mu <- list(
+  mu = \(x) inv_gamma_t(x, 0.7*10000, 10000),
+  K = \(x) inv_unif_t(x, 0, 10),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_mis.mu<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.mu,inv.link.f_mis.mu,th.init,'mis-specify mu')
+```
+
+```{r}
+#difference bewteen the estimate of alpha by mis-specifying mu,c,p and k
+bind.post.mis.alpha.g1 <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
+                       post.list_mis.c$post.df,post.list_mis.mu$post.df)
+bind.post.mis.alpha.g2 <- rbind(post.list_all$post.df, post.list_mis.k$post.df)
+
+post.df.mis.alpha.g1<-bind.post.mis.alpha.g1[bind.post.mis.alpha.g1$param=='alpha',]
+post.df.mis.alpha.g2<-bind.post.mis.alpha.g2[bind.post.mis.alpha.g2$param=='alpha',]
+
+gg1<-ggplot(post.df.mis.alpha.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 2.5,param = 'alpha'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.alpha.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 2.5,param = 'alpha'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of k by mis-specifying mu,c,p and alpha
+bind.post.mis.k.g1 <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
+                       post.list_mis.c$post.df,post.list_mis.mu$post.df)
+bind.post.mis.k.g2 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df)
+
+post.df.mis.k.g1<-bind.post.mis.k.g1[bind.post.mis.k.g1$param=='K',]
+post.df.mis.k.g2<-bind.post.mis.k.g2[bind.post.mis.k.g2$param=='K',]
+
+gg1<-ggplot(post.df.mis.k.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.15,param = 'K'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.k.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.15,param = 'K'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of c by mis-specifying mu,alpha,k and p
+bind.post.mis.c.g1 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.mu$post.df)
+bind.post.mis.c.g2 <- rbind(post.list_all$post.df, post.list_mis.p$post.df)
+
+post.df.mis.c.g1<-bind.post.mis.c.g1[bind.post.mis.c.g1$param=='c',]
+post.df.mis.c.g2<-bind.post.mis.c.g2[bind.post.mis.c.g2$param=='c',]
+
+gg1<-ggplot(post.df.mis.c.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.1,param = 'c'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.c.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.1,param = 'c'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of p by mis-specifying mu,alpha,k and c
+bind.post.mis.p.g1 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.mu$post.df)
+bind.post.mis.p.g2 <- rbind(post.list_all$post.df, post.list_mis.c$post.df)
+
+post.df.mis.p.g1<-bind.post.mis.p.g1[bind.post.mis.p.g1$param=='p',]
+post.df.mis.p.g2<-bind.post.mis.p.g2[bind.post.mis.p.g2$param=='p',]
+
+gg1<-ggplot(post.df.mis.p.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 1.5,param = 'p'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.p.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 1.5,param = 'p'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of p by mis-specifying mu,alpha,k and c
+bind.post.mis.mu <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.c$post.df,
+                       post.list_mis.p$post.df)
+
+post.df.mis.mu<-bind.post.mis.mu[bind.post.mis.mu$param=='mu',]
+
+ggplot(post.df.mis.mu, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.35,param = 'mu'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
 # bind marginal posterior data.frames
 bind.post.mis <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
                    post.list_mis.c$post.df, post.list_mis.k$post.df, 
-                   post.list_mis.alpha$post.df)
+                   post.list_mis.alpha$post.df,
+                  post.list_mis.mu$post.df[!post.list_mis.mu$post.df$param=='mu',])
 
 ggplot(bind.post.mis, aes(x = x, y = y, color = cat.used)) +
   geom_line() +

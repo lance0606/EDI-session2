@@ -28,6 +28,8 @@ generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
   M0 <- 2.5
   T1 <- T1
   T2 <- T2
+  
+  set.seed(1)
   # generate the catalogue - it returns a list of data.frames
   synth.cat.list <- generate_temporal_ETAS_synthetic(
     theta = true.param,
@@ -80,6 +82,7 @@ generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
   # add event identifier
   synth.cat.df$idx.p <- seq_len(nrow(synth.cat.df))
   
+  set.seed(1)
   synth.fit <- Temporal.ETAS(
     total.data = synth.cat.df,
     M0 = M0,
@@ -381,13 +384,13 @@ ggplot(post.df.alpha.g4, aes(x = x, y = y, color = cat.used)) +
 #3
 identifier<-c('all magnitude=3','all magnitude=4','all magnitude=5',
               'all different between 2.5 and 5.4',
-              'all different at least one>6')
+              'all different at least one>5.4')
 post.list.s3<-list()
 for (i in 3:10) {
   set.seed(1)
   ts<-sort(sample(T1:T2,i,replace = FALSE))
   rand.mag<-runif(i,2.5,5.4)
-  rand.mag6<-replace(rand.mag,2,6)
+  rand.mag6<-replace(rand.mag,sample(2:i,1),6)
   Ht.list<-list(
     data.frame(ts = ts,magnitudes = rep(3,i)),
     data.frame(ts = ts,magnitudes = rep(4,i)),
@@ -422,7 +425,8 @@ gg1<-ggplot(post.df.alpha.list[[1]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 4, y = 7, label = "3 events")
 
 gg2<-ggplot(post.df.alpha.list[[2]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -432,7 +436,8 @@ gg2<-ggplot(post.df.alpha.list[[2]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 4, y = 7, label = "4 events")
 
 gg3<-ggplot(post.df.alpha.list[[3]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -442,7 +447,8 @@ gg3<-ggplot(post.df.alpha.list[[3]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 4.5, y = 7, label = "5 events")
 
 gg4<-ggplot(post.df.alpha.list[[4]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -452,7 +458,8 @@ gg4<-ggplot(post.df.alpha.list[[4]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3.25, y = 5, label = "6 events")
 
 gg5<-ggplot(post.df.alpha.list[[5]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -462,7 +469,8 @@ gg5<-ggplot(post.df.alpha.list[[5]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3.5, y = 6, label = "7 events")
 
 gg6<-ggplot(post.df.alpha.list[[6]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -472,7 +480,8 @@ gg6<-ggplot(post.df.alpha.list[[6]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3.25, y = 7, label = "8 events")
 
 gg7<-ggplot(post.df.alpha.list[[7]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -482,7 +491,8 @@ gg7<-ggplot(post.df.alpha.list[[7]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 3.75, y = 7.5, label = "9 events")
 
 gg8<-ggplot(post.df.alpha.list[[8]], aes(x = x, y = y, color = cat.used)) +
   geom_line() +
@@ -492,7 +502,8 @@ gg8<-ggplot(post.df.alpha.list[[8]], aes(x = x, y = y, color = cat.used)) +
   geom_vline(
     data = df.true.param,
     mapping = aes(xintercept = x), linetype = 2
-  )
+  ) +
+  annotate("text", x = 5, y = 7.5, label = "10 events")
 
 ggarrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7,gg8,ncol=2,nrow=4,align='hv',common.legend = TRUE)
 ```
