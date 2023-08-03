@@ -1,0 +1,586 @@
+---
+title: "Q1"
+output: pdf_document
+date: "2023-07-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+library(extraDistr)
+library(ggpubr)
+library(Rmisc)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
+  true.param <- true.param
+  beta.p <- true.beta
+  M0 <- 2.5
+  T1 <- T1
+  T2 <- T2
+  
+  set.seed(1)
+  # generate the catalogue - it returns a list of data.frames
+  synth.cat.list <- generate_temporal_ETAS_synthetic(
+    theta = true.param,
+    beta.p = beta.p,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    Ht = Ht,
+    ncore = 1
+  )
+  synth.cat.df <- do.call(rbind, synth.cat.list)
+  
+  # set copula transformations list
+  link.f <- list(
+    mu = \(x) gamma_t(x, 0.1, 0.1),
+    K = \(x) loggaus_t(x, -1, 2.03),
+    alpha = \(x) unif_t(x, 0, 10),
+    c_ = \(x) unif_t(x, 0, 10),
+    p = \(x) unif_t(x, 1, 10)
+  )
+  
+  # set inverse copula transformations list
+  inv.link.f <- list(
+    mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+    K = \(x) inv_loggaus_t(x, -1, 2.03),
+    alpha = \(x) inv_unif_t(x, 0, 10),
+    c_ = \(x) inv_unif_t(x, 0, 10),
+    p = \(x) inv_unif_t(x, 1, 10)
+  )
+  
+  # set up list of initial values
+  th.init <- list(
+    th.mu = inv.link.f$mu(0.5),
+    th.K = inv.link.f$K(0.1),
+    th.alpha = inv.link.f$alpha(1),
+    th.c = inv.link.f$c_(0.1),
+    th.p = inv.link.f$p(1.1)
+  )
+  
+  # set up list of bru options
+  bru.opt.list <- list(
+    bru_verbose = 0, # type of visual output
+    bru_max_iter = 70, # maximum number of iterations
+    # bru_method = list(max_step = 0.5),
+    bru_initial = th.init
+  ) # parameters initial values
+  
+  # sort catalogue by occurrence time
+  synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
+  # add event identifier
+  synth.cat.df$idx.p <- seq_len(nrow(synth.cat.df))
+  
+  set.seed(1)
+  synth.fit <- Temporal.ETAS(
+    total.data = synth.cat.df,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    link.functions = link.f,
+    coef.t. = 1,
+    delta.t. = 0.1,
+    N.max. = 5,
+    bru.opt = bru.opt.list
+  )
+  
+  # create input list to explore model output
+  input_list <- list(
+    model.fit = synth.fit,
+    link.functions = link.f
+  )
+  
+  post.list <- get_posterior_param(input.list = input_list)
+  post.list$post.df$cat.used <- itentifier
+  return(post.list)
+}
+```
+
+```{r}
+#问题：加入的地震事件的震级各不相同能使alpha的估计更准确
+#1. 探究是否应该增加地震事件（不论增加的地震级数多少，增加多少个地震事件，
+#对于alpha的估计都应该比原始版本更好）
+#因此举以下几种例子：
+#  默认情况，没有增加任何地震事件
+#  增加一个震级为4的事件
+#  增加一个震级为6的事件
+#  增加两个事件，震级均为4.5
+#2. 研究加入地震事件的数量和震级的影响
+#3. 使加入的地震事件的震级各不相同
+#4. 加入的地震震级中是否包含一个6级及以上
+```
+
+```{r}
+#1
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+Ht1.1 <- NULL
+Ht1.2 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 4)
+Ht1.3 <- data.frame(ts = mean(c(T1, T2)),magnitudes = 6)
+Ht1.4 <- data.frame(ts = c(120,240),magnitudes = c(4.5,4.5))
+
+post.list1.1<-generate_post.list(true.param,true.beta,T1,T2,Ht1.1,'default')
+post.list1.2<-generate_post.list(true.param,true.beta,T1,T2,Ht1.2,'1 event with mangnitude=4')
+post.list1.3<-generate_post.list(true.param,true.beta,T1,T2,Ht1.3,'1 event with mangnitude=6')
+post.list1.4<-generate_post.list(true.param,true.beta,T1,T2,Ht1.4,'2 events with mangnitude=4.5')
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = 2.5,
+  param = 'alpha'
+)
+
+# bind marginal posterior data.frames
+bind.post.df1 <- rbind(post.list1.1$post.df, post.list1.2$post.df,
+                       post.list1.3$post.df, post.list1.4$post.df)
+post.df.alpha1 <- bind.post.df1[bind.post.df1$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+summary(post.list1.1$post.df[post.list1.1$post.df$param=='alpha',]$x)
+summary(post.list1.2$post.df[post.list1.2$post.df$param=='alpha',]$x)
+summary(post.list1.3$post.df[post.list1.3$post.df$param=='alpha',]$x)
+summary(post.list1.4$post.df[post.list1.4$post.df$param=='alpha',]$x)
+```
+
+```{r}
+#2
+#group1
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+identifier<-c('1 high magnitude events',
+              '2 high magnitude events',
+              '3 high magnitude events',
+              '4 high magnitude events',
+              '5 high magnitude events',
+              '6 high magnitude events',
+              '7 high magnitude events',
+              '8 high magnitude events',
+              '9 high magnitude events',
+              '10 high magnitude events')
+
+Ht.list.g1<-lapply(seq_len(10),\(x)
+  data.frame(ts = sort(sample(T1:T2,x,replace = FALSE)),magnitudes = rep(3,x))
+)
+
+post.list.g1<-lapply(seq_len(10),\(x)
+  generate_post.list(true.param,true.beta,T1,T2,Ht.list.g1[[x]],identifier[x])
+)
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df.g1 <- rbind(post.list.g1[[1]]$post.df,post.list.g1[[2]]$post.df,
+                         post.list.g1[[3]]$post.df,post.list.g1[[4]]$post.df,
+                         post.list.g1[[5]]$post.df,post.list.g1[[6]]$post.df,
+                         post.list.g1[[7]]$post.df,post.list.g1[[8]]$post.df,
+                         post.list.g1[[9]]$post.df,post.list.g1[[10]]$post.df)
+bind.post.df.g1.good <- rbind(post.list.g1[[7]]$post.df,post.list.g1[[9]]$post.df,
+                              post.list.g1[[2]]$post.df)
+
+post.df.alpha.g1 <- bind.post.df.g1[bind.post.df.g1$param=='alpha',]
+post.df.alpha.g1.good <- bind.post.df.g1.good[bind.post.df.g1.good$param=='alpha',]
+
+# plot them
+gg1<-ggplot(post.df.alpha.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 4.5, y = 4, label = "All Cases")+
+  annotate("rect", xmin = 4.3, xmax = 4.7, ymin = 3.8, ymax = 4.2,alpha = .2)
+
+gg2<-ggplot(post.df.alpha.g1.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3, y = 4, label = "Good Cases")+
+  annotate("rect", xmin = 2.95, xmax = 3.05, ymin = 3.8, ymax = 4.2,alpha = .2)
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#group2
+set.seed(1)
+
+Ht.list.g2<-lapply(seq_len(10),\(x)
+  data.frame(ts = sort(sample(T1:T2,x,replace = FALSE)),magnitudes = rep(4,x))
+)
+
+post.list.g2<-lapply(seq_len(10),\(x)
+  generate_post.list(true.param,true.beta,T1,T2,Ht.list.g2[[x]],identifier[x])
+)
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df.g2 <- rbind(post.list.g2[[1]]$post.df,post.list.g2[[2]]$post.df,
+                         post.list.g2[[4]]$post.df,post.list.g2[[5]]$post.df,
+                         post.list.g2[[6]]$post.df,post.list.g2[[7]]$post.df,
+                         post.list.g2[[8]]$post.df,post.list.g2[[9]]$post.df,
+                         post.list.g2[[10]]$post.df)
+bind.post.df.g2.good <- rbind(post.list.g2[[2]]$post.df,post.list.g2[[5]]$post.df,
+                              post.list.g2[[9]]$post.df,post.list.g2[[10]]$post.df)
+
+post.df.alpha.g2 <- bind.post.df.g2[bind.post.df.g2$param=='alpha',]
+post.df.alpha.g2.good <- bind.post.df.g2.good[bind.post.df.g2.good$param=='alpha',]
+
+# plot them
+gg1<-ggplot(post.df.alpha.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 4, y = 2, label = "All Cases")+
+  annotate("rect", xmin = 3.8, xmax = 4.2, ymin = 1.8, ymax = 2.2,alpha = .2)
+
+gg2<-ggplot(post.df.alpha.g2.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3.5, y = 2, label = "Good Cases")+
+  annotate("rect", xmin = 3.3, xmax = 3.7, ymin = 1.8, ymax = 2.2,alpha = .2)
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#group3
+set.seed(1)
+
+Ht.list.g3<-lapply(seq_len(10),\(x)
+  data.frame(ts = sort(sample(T1:T2,x,replace = FALSE)),magnitudes = rep(5,x))
+)
+
+post.list.g3<-lapply(seq_len(10),\(x)
+  generate_post.list(true.param,true.beta,T1,T2,Ht.list.g3[[x]],identifier[x])
+)
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df.g3 <- rbind(post.list.g3[[1]]$post.df,post.list.g3[[2]]$post.df,
+                         post.list.g3[[3]]$post.df,post.list.g3[[4]]$post.df,
+                         post.list.g3[[5]]$post.df,post.list.g3[[6]]$post.df,
+                         post.list.g3[[7]]$post.df,post.list.g3[[8]]$post.df,
+                         post.list.g3[[9]]$post.df,post.list.g3[[10]]$post.df)
+bind.post.df.g3.good <- rbind(post.list.g3[[6]]$post.df,post.list.g3[[7]]$post.df,
+                              post.list.g3[[8]]$post.df,post.list.g3[[10]]$post.df)
+
+post.df.alpha.g3 <- bind.post.df.g3[bind.post.df.g3$param=='alpha',]
+post.df.alpha.g3.good <- bind.post.df.g3.good[bind.post.df.g3.good$param=='alpha',]
+
+# plot them
+gg1<-ggplot(post.df.alpha.g3, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3, y = 6, label = "All Cases")+
+  annotate("rect", xmin = 2.93, xmax = 3.07, ymin = 5.5, ymax = 6.5,alpha = .2)
+
+gg2<-ggplot(post.df.alpha.g3.good, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 2.9, y = 6, label = "Good Cases")+
+  annotate("rect", xmin = 2.85, xmax = 2.95, ymin = 5.5, ymax = 6.5,alpha = .2)
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#group4
+set.seed(1)
+
+Ht.list.g4<-lapply(seq_len(3),\(x)
+  data.frame(ts = sort(sample(T1:T2,x,replace = FALSE)),magnitudes = rep(6,x))
+)
+
+post.list.g4<-lapply(seq_len(3),\(x)
+  generate_post.list(true.param,true.beta,T1,T2,Ht.list.g4[[x]],identifier[x])
+)
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.df.g4 <- rbind(post.list.g4[[1]]$post.df,post.list.g4[[2]]$post.df,
+                         post.list.g4[[3]]$post.df)
+post.df.alpha.g4 <- bind.post.df.g4[bind.post.df.g4$param=='alpha',]
+
+# plot them
+ggplot(post.df.alpha.g4, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+#3
+identifier<-c('all magnitude=3','all magnitude=4','all magnitude=5',
+              'all different between 2.5 and 5.4',
+              'all different at least one>5.4')
+post.list.s3<-list()
+for (i in 3:10) {
+  set.seed(1)
+  ts<-sort(sample(T1:T2,i,replace = FALSE))
+  rand.mag<-runif(i,2.5,5.4)
+  rand.mag6<-replace(rand.mag,sample(2:i,1),6)
+  Ht.list<-list(
+    data.frame(ts = ts,magnitudes = rep(3,i)),
+    data.frame(ts = ts,magnitudes = rep(4,i)),
+    data.frame(ts = ts,magnitudes = rep(5,i)),
+    data.frame(ts = ts,magnitudes = rand.mag),
+    data.frame(ts = ts,magnitudes = rand.mag6)
+  )
+  post.list<-lapply(seq_len(5),\(x)
+    generate_post.list(true.param,true.beta,T1,T2,Ht.list[[x]],identifier[x])
+  )
+  post.list.s3<-append(post.list.s3,post.list)
+}
+```
+
+```{r}
+# bind marginal posterior data.frames
+post.df.alpha.list<-list()
+for (j in seq(1,40,5)) {
+  bind.post.df <- rbind(post.list.s3[[j]]$post.df,post.list.s3[[j+1]]$post.df,
+                        post.list.s3[[j+2]]$post.df,post.list.s3[[j+3]]$post.df,
+                        post.list.s3[[j+4]]$post.df)
+  post.df.alpha <- bind.post.df[bind.post.df$param=='alpha',]
+  post.df.alpha.list<-append(post.df.alpha.list,list(post.df.alpha))
+}
+
+# plot them
+gg1<-ggplot(post.df.alpha.list[[1]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 4, y = 7, label = "3 events")
+
+gg2<-ggplot(post.df.alpha.list[[2]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 4, y = 7, label = "4 events")
+
+gg3<-ggplot(post.df.alpha.list[[3]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 4.5, y = 7, label = "5 events")
+
+gg4<-ggplot(post.df.alpha.list[[4]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3.25, y = 5, label = "6 events")
+
+gg5<-ggplot(post.df.alpha.list[[5]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3.5, y = 6, label = "7 events")
+
+gg6<-ggplot(post.df.alpha.list[[6]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3.25, y = 7, label = "8 events")
+
+gg7<-ggplot(post.df.alpha.list[[7]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 3.75, y = 7.5, label = "9 events")
+
+gg8<-ggplot(post.df.alpha.list[[8]], aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  ) +
+  annotate("text", x = 5, y = 7.5, label = "10 events")
+
+ggarrange(gg1,gg2,gg3,gg4,gg5,gg6,gg7,gg8,ncol=2,nrow=4,align='hv',common.legend = TRUE)
+```
+
+```{r}
+table.list<-list()
+for (i in 1:8) {
+  table.list<-append(table.list,
+  list(data.frame(
+    estimate=c(mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                          =='all magnitude=3',]$x),
+              mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                          =='all magnitude=4',]$x),
+              mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                          =='all magnitude=5',]$x),
+              mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                        =='all different between 2.5 and 5.4',]$x),
+              mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                          =='all different at least one>5.4',]$x)),
+    
+    diff=c(
+      abs(2.5-mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                         =='all magnitude=3',]$x)),
+      abs(2.5-mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                         =='all magnitude=4',]$x)),
+      abs(2.5-mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                                         =='all magnitude=5',]$x)),
+      abs(2.5-mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                       =='all different between 2.5 and 5.4',]$x)),
+      abs(2.5-mean(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+                          =='all different at least one>5.4',]$x))),
+    
+    CI=c(
+      paste0('[',round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all magnitude=3',]$x)[[3]],4),',',round(CI(post.df.alpha.list[[i]]
+          [post.df.alpha.list[[i]]$cat.used=='all magnitude=3',]$x)[[1]],4),']'),
+      paste0('[',round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all magnitude=4',]$x)[[3]],4),',',round(CI(post.df.alpha.list[[i]]
+          [post.df.alpha.list[[i]]$cat.used=='all magnitude=4',]$x)[[1]],4),']'),
+      paste0('[',round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all magnitude=5',]$x)[[3]],4),',',round(CI(post.df.alpha.list[[i]]
+          [post.df.alpha.list[[i]]$cat.used=='all magnitude=5',]$x)[[1]],4),']'),
+      paste0('[',round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all different between 2.5 and 5.4',]$x)[[3]],4),',',
+          round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all different between 2.5 and 5.4',]$x)[[1]],4),']'),
+      paste0('[',round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all different at least one>5.4',]$x)[[3]],4),',',
+          round(CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+          =='all different at least one>5.4',]$x)[[1]],4),']')),
+    
+    lengthofCI=c(
+      CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+      =='all magnitude=3',]$x)[[1]] - CI(post.df.alpha.list[[i]]
+      [post.df.alpha.list[[i]]$cat.used=='all magnitude=3',]$x)[[3]],
+      CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+      =='all magnitude=4',]$x)[[1]] - CI(post.df.alpha.list[[i]]
+      [post.df.alpha.list[[i]]$cat.used=='all magnitude=4',]$x)[[3]],
+      CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+      =='all magnitude=5',]$x)[[1]] - CI(post.df.alpha.list[[i]]
+      [post.df.alpha.list[[i]]$cat.used=='all magnitude=5',]$x)[[3]],
+      CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+      =='all different between 2.5 and 5.4',]$x)[[1]] - CI(post.df.alpha.list[[i]]
+      [post.df.alpha.list[[i]]$cat.used=='all different between 2.5 and 5.4',]
+      $x)[[3]],
+      CI(post.df.alpha.list[[i]][post.df.alpha.list[[i]]$cat.used
+      =='all different at least one>5.4',]$x)[[1]] - CI(post.df.alpha.list[[i]]
+      [post.df.alpha.list[[i]]$cat.used=='all different at least one>5.4',]$x)
+      [[3]]),
+    
+      row.names = identifier
+  )))
+}
+```
+
+```{r}
+for(i in 1:8){
+  print(table.list[[i]])
+}
+```

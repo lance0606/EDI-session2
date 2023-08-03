@@ -36,9 +36,9 @@ horus <- na.omit(horus)
 # set up parameters for selection
 start.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
 end.date <- as.POSIXct("2011-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
-min.longitude <- 10
-max.longitude <- 15
-min.latitude <- 40
+min.longitude <- 10.5
+max.longitude <- 16
+min.latitude <- 40.5
 max.latitude <- 45
 M0 <- 2.5
 
@@ -104,6 +104,8 @@ bru.opt.list <- list(
 # set starting and time of the time interval used for model fitting. In this case, we use the interval covered by the data.
 T1 <- 0
 T2 <- max(aquila.bru$ts) + 0.2 # Use max(..., na.rm = TRUE) if there may still be NAs here
+
+set.seed(1)
 # fit the model
 aquila.fit <- Temporal.ETAS(
   total.data = aquila.bru,
@@ -119,6 +121,7 @@ aquila.fit <- Temporal.ETAS(
 ```
 
 ```{r}
+set.seed(1)
 #用拟合后的模型生成多组参数
 # create input list to explore model output
 input_list <- list(
@@ -174,7 +177,7 @@ for (i in 2:1000) {
 ```
 
 ```{r}
-set.seed(111)
+set.seed(1)
 true.param<-list(mu=mean(post.samp$mu), K=mean(post.samp$K), 
             alpha=mean(post.samp$alpha), c=mean(post.samp$c),p=mean(post.samp$p))
 # generate the catalogue - it returns a list of data.frames
@@ -199,7 +202,6 @@ plot(density(time.between.events.synth),
 ```
 
 ```{r}
-
 real<-data.frame(real=time.between.events.real)
 synth<-data.frame(synth=time.between.events.synth)
 ggplot() + 
