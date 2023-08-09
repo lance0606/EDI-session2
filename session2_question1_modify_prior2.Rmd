@@ -23,6 +23,8 @@ INLA::inla.setOption(num.threads = num.cores)
 ```
 
 ```{r}
+#function to get the posterior distribution of all parameters. This function #contains many sections: generate synthetic catalogues, fit ETAS model and 
+#get posterior distribution
 generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
   true.param <- true.param
   beta.p <- true.beta
@@ -109,17 +111,16 @@ generate_post.list<-function(true.param,true.beta,T1,T2,Ht,itentifier){
 ```
 
 ```{r}
-#问题：加入的地震事件的震级各不相同能使alpha的估计更准确
-#1. 探究是否应该增加地震事件（不论增加的地震级数多少，增加多少个地震事件，
-#对于alpha的估计都应该比原始版本更好）
-#因此举以下几种例子：
-#  默认情况，没有增加任何地震事件
-#  增加一个震级为4的事件
-#  增加一个震级为6的事件
-#  增加两个事件，震级均为4.5
-#2. 研究加入地震事件的数量和震级的影响
-#3. 使加入的地震事件的震级各不相同
-#4. 加入的地震震级中是否包含一个6级及以上
+#issue：how to make the estimate of alpha more accurate
+#1. explore whether we should add earthquake events (no matter how many, 
+#no matter the magniude)
+#So make several examples:
+#  default case, no added events
+#  add one magnitude 4 event
+#  add one magnitude 6 event
+#  add two events, all magnitude 4.5
+#2. only explore the influence made by number of events
+#3. explore all posible factors
 ```
 
 ```{r}
@@ -576,11 +577,5 @@ for (i in 1:8) {
     
       row.names = identifier
   )))
-}
-```
-
-```{r}
-for(i in 1:8){
-  print(table.list[[i]])
 }
 ```

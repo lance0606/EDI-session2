@@ -21,7 +21,7 @@ INLA::inla.setOption(num.threads = num.cores)
 ```
 
 ```{r}
-#获得实际数据
+#get real data horus
 # transform time string in Date object
 horus$time_date <- as.POSIXct(
   horus$time_string,
@@ -32,10 +32,14 @@ horus$time_date <- as.POSIXct(
 # These should ideally be corrected, but for now, we just remove the rows that
 # couldn't be converted.
 horus <- na.omit(horus)
+```
 
+## Data from 2009-2010
+
+```{r}
 # set up parameters for selection
-start.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
-end.date <- as.POSIXct("2011-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+start.date <- as.POSIXct("2009-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+end.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
 min.longitude <- 10.5
 max.longitude <- 16
 min.latitude <- 40.5
@@ -65,7 +69,7 @@ aquila.bru <- data.frame(
 ```
 
 ```{r}
-#用实际数据拟合模型
+#fit the model using real data
 # set copula transformations list
 link.f <- list(
   mu = \(x) gamma_t(x, 0.1, 0.1),
@@ -122,7 +126,7 @@ aquila.fit <- Temporal.ETAS(
 
 ```{r}
 set.seed(1)
-#用拟合后的模型生成多组参数
+#generate many posterior samples
 # create input list to explore model output
 input_list <- list(
   model.fit = aquila.fit,
@@ -161,22 +165,6 @@ time.between.events.df <- lapply(multi.synth.cat.list.df, \(x) diff(x$ts))
 ```
 
 ```{r}
-time.between.events.real<-diff(aquila.bru$ts)
-plot(density(time.between.events.real),
-     main='Distribution of time between events in real data',
-     xlab='time between evetns')
-```
-
-```{r}
-plot(density(time.between.events.df[[1]]),
-     main='Distribution of time between events in synthetic data',
-     xlab='time between evetns',ylim=c(0,1.5))
-for (i in 2:1000) {
-  lines(density(time.between.events.df[[i]]))
-}
-```
-
-```{r}
 set.seed(1)
 true.param<-list(mu=mean(post.samp$mu), K=mean(post.samp$K), 
             alpha=mean(post.samp$alpha), c=mean(post.samp$c),p=mean(post.samp$p))
@@ -195,18 +183,137 @@ synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
 ```
 
 ```{r}
+time.between.events.real<-diff(aquila.bru$ts)
 time.between.events.synth<-diff(synth.cat.df$ts)
-plot(density(time.between.events.synth),
-     main='Distribution of time between events in synthetic data',
-     xlab='time between evetns')
-```
-
-```{r}
 real<-data.frame(real=time.between.events.real)
 synth<-data.frame(synth=time.between.events.synth)
 ggplot() + 
   geom_density(aes(real,fill='real'),alpha=0.5,data=real)+
   geom_density(aes(synth,fill='synth'),alpha=0.5,data=synth)+
+  scale_fill_manual(name = 'data', 
+                    values = c(real = "red", synth = "green"))+
+  xlab('time between events')
+```
+
+## Data from 2010-2011
+
+```{r}
+# set up parameters for selection
+start.date <- as.POSIXct("2010-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+end.date <- as.POSIXct("2011-01-01T00:00:00", format = "%Y-%m-%dT%H:%M:%OS")
+min.longitude <- 10.5
+max.longitude <- 16
+min.latitude <- 40.5
+max.latitude <- 45
+M0 <- 2.5
+
+# set up conditions for selection
+aquila.sel1 <- (horus$time_date >= start.date) &
+  (horus$time_date < end.date) &
+  (horus$lon >= min.longitude) &
+  (horus$lon <= max.longitude) &
+  (horus$lat >= min.latitude) &
+  (horus$lat <= max.latitude) &
+  (horus$M >= M0)
+
+# select
+aquila1 <- horus[aquila.sel1, ]
+
+# set up data.frame for model fitting
+aquila.bru1 <- data.frame(
+  ts = as.numeric(
+    difftime(aquila1$time_date, start.date, units = "days")
+  ),
+  magnitudes = aquila1$M,
+  idx.p = 1:nrow(aquila1)
+)
+```
+
+```{r}
+# set starting and time of the time interval used for model fitting. In this case, we use the interval covered by the data.
+T1 <- 0
+T2 <- max(aquila.bru1$ts) + 0.2 # Use max(..., na.rm = TRUE) if there may still be NAs here
+
+set.seed(1)
+# fit the model
+aquila.fit1 <- Temporal.ETAS(
+  total.data = aquila.bru1,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  link.functions = link.f,
+  coef.t. = 1,
+  delta.t. = 0.1,
+  N.max. = 5,
+  bru.opt = bru.opt.list
+)
+```
+
+```{r}
+set.seed(1)
+# create input list to explore model output
+input_list1 <- list(
+  model.fit = aquila.fit1,
+  link.functions = link.f
+)
+
+post.samp1 <- post_sampling(
+  input.list = input_list1,
+  n.samp = 1000,
+  max.batch = 1000,
+  ncore = num.cores
+)
+
+# maximum likelihood estimator for beta
+beta.p1 <- 1 / (mean(aquila.bru1$magnitudes) - M0)
+```
+
+```{r}
+set.seed(1)
+n.cat <- 1000
+# generate catalogues as list of lists
+multi.synth.cat.list1 <- lapply(seq_len(n.cat), \(x)
+generate_temporal_ETAS_synthetic(
+  theta = post.samp1[x, ],
+  beta.p = beta.p1,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  Ht = NULL
+))
+
+# store catalogues as list of data.frames
+multi.synth.cat.list.df1 <- lapply(multi.synth.cat.list1, \(x) do.call(rbind, x))
+multi.synth.cat.list.df1 <- lapply(multi.synth.cat.list.df1, \(x) x[order(x$ts), ])
+time.between.events.df1 <- lapply(multi.synth.cat.list.df1, \(x) diff(x$ts))
+```
+
+```{r}
+set.seed(1)
+true.param1<-list(mu=mean(post.samp1$mu), K=mean(post.samp1$K), 
+          alpha=mean(post.samp1$alpha), c=mean(post.samp1$c),p=mean(post.samp1$p))
+# generate the catalogue - it returns a list of data.frames
+synth.catalogue1 <- generate_temporal_ETAS_synthetic(
+  theta = true.param1,
+  beta.p = beta.p1,
+  M0 = M0,
+  T1 = T1,
+  T2 = T2,
+  Ht = NULL,
+  ncore = 1
+)
+synth.cat.df1 <- do.call(rbind, synth.catalogue1)
+synth.cat.df1 <- synth.cat.df1[order(synth.cat.df1$ts), ]
+```
+
+```{r}
+time.between.events.real1<-diff(aquila.bru1$ts)
+time.between.events.synth1<-diff(synth.cat.df1$ts)
+real1<-data.frame(real=time.between.events.real1)
+synth1<-data.frame(synth=time.between.events.synth1)
+ggplot() + 
+  geom_density(aes(real,fill='real'),alpha=0.5,data=real1)+
+  geom_density(aes(synth,fill='synth'),alpha=0.5,data=synth1)+
   scale_fill_manual(name = 'data', 
                     values = c(real = "red", synth = "green"))+
   xlab('time between events')

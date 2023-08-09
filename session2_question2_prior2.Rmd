@@ -1,0 +1,589 @@
+---
+title: "Q2"
+output: pdf_document
+date: "2023-07-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ETAS.inlabru)
+library(ggplot2)
+library(extraDistr)
+library(ggpubr)
+
+# Increase num.cores if you have more cores on your computer, and reduce it
+# if you have fewer!
+num.cores <- 2
+
+INLA::inla.setOption(num.threads = num.cores)
+```
+
+```{r}
+#function to get the posterior distribution of all parameters. This function #contains many sections: generate synthetic catalogues, fit ETAS model and 
+#get posterior distribution
+generate_post.list<-function(true.param,true.beta,T1,T2,link.f,inv.link.f,th.init,itentifier){
+  true.param <- true.param
+  beta.p <- true.beta
+  M0 <- 2.5
+  T1 <- T1
+  T2 <- T2
+  
+  set.seed(1)
+  # generate the catalogue - it returns a list of data.frames
+  synth.cat.list <- generate_temporal_ETAS_synthetic(
+    theta = true.param,
+    beta.p = beta.p,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    Ht = NULL,
+    ncore = 1
+  )
+  synth.cat.df <- do.call(rbind, synth.cat.list)
+  
+  # set up list of bru options
+  bru.opt.list <- list(
+    bru_verbose = 0, # type of visual output
+    bru_max_iter = 70, # maximum number of iterations
+    # bru_method = list(max_step = 0.5),
+    bru_initial = th.init
+  ) # parameters initial values
+  
+  # sort catalogue by occurrence time
+  synth.cat.df <- synth.cat.df[order(synth.cat.df$ts), ]
+  # add event identifier
+  synth.cat.df$idx.p <- seq_len(nrow(synth.cat.df))
+  
+  set.seed(1)
+  synth.fit <- Temporal.ETAS(
+    total.data = synth.cat.df,
+    M0 = M0,
+    T1 = T1,
+    T2 = T2,
+    link.functions = link.f,
+    coef.t. = 1,
+    delta.t. = 0.1,
+    N.max. = 5,
+    bru.opt = bru.opt.list
+  )
+  
+  # create input list to explore model output
+  input_list <- list(
+    model.fit = synth.fit,
+    link.functions = link.f
+  )
+  
+  set.seed(1)
+  post.list <- get_posterior_param(input.list = input_list)
+  post.list$post.df$cat.used <- itentifier
+  return(post.list)
+}
+```
+
+```{r}
+#fit the model on all parameters
+set.seed(1)
+true.param <- list(mu = 0.35, K = 0.15, alpha = 2.5, c = 0.1, p = 1.5)
+true.beta <- 2.4
+T1 <- 0
+T2 <- 365
+
+# set copula transformations list
+link.f <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+  
+# set up list of initial values
+th.init <- list(
+  th.mu = inv.link.f$mu(0.5),
+  th.K = inv.link.f$K(0.1),
+  th.alpha = inv.link.f$alpha(1),
+  th.c = inv.link.f$c_(0.1),
+  th.p = inv.link.f$p(1.1)
+)
+
+post.list_all<-generate_post.list(true.param,true.beta,T1,T2,link.f,inv.link.f,th.init,'all parameters')
+```
+
+```{r}
+# create data.frame of true value of parameters
+df.true.param <- data.frame(
+  x = unlist(true.param),
+  param = names(true.param)
+)
+# add to the marginal posterior distribution of the parameters the true value of the parameters.
+post.list_all$post.plot +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+now try to fix all parameters on some values and see what's happening.
+
+```{r}
+#fixed on mu
+set.seed(1)
+
+# set copula transformations list
+link.f_fix.on.mu <- list(
+  mu = \(x) gamma_t(x, 0.35*10000, 10000),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_fix.on.mu <- list(
+  mu = \(x) inv_gamma_t(x, 0.35*10000, 10000),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_fix.on.mu<-generate_post.list(true.param,true.beta,T1,T2,
+              link.f_fix.on.mu,inv.link.f_fix.on.mu,th.init,'fix on mu')
+```
+
+```{r}
+#fixed on k
+set.seed(1)
+
+# set copula transformations list
+link.f_fix.on.k <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, log(0.15), 0.0001),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_fix.on.k <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, log(0.15), 0.0001),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_fix.on.k<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_fix.on.k,inv.link.f_fix.on.k,th.init,'fix on K')
+```
+
+```{r}
+#fixed on alpha
+set.seed(1)
+
+# set copula transformations list
+link.f_fix.on.alpha <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 2.5, 2.5),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_fix.on.alpha <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 2.5, 2.5),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_fix.on.alpha<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_fix.on.alpha,inv.link.f_fix.on.alpha,th.init,'fix on alpha')
+```
+
+```{r}
+#fixed on c
+set.seed(1)
+
+# set copula transformations list
+link.f_fix.on.c <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0.1, 0.1),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_fix.on.c <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0.1, 0.1),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_fix.on.c<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_fix.on.c,inv.link.f_fix.on.c,th.init,'fix on c')
+```
+
+```{r}
+#fixed on p
+set.seed(1)
+
+# set copula transformations list
+link.f_fix.on.p <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1.5, 1.5)
+)
+  
+# set inverse copula transformations list
+inv.link.f_fix.on.p <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1.5, 1.5)
+)
+
+post.list_fix.on.p<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_fix.on.p,inv.link.f_fix.on.p,th.init,'fix on p')
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post <- rbind(post.list_all$post.df, post.list_fix.on.alpha$post.df,
+                   post.list_fix.on.c$post.df, 
+        post.list_fix.on.mu$post.df[!post.list_fix.on.mu$post.df$param=='mu',],
+        post.list_fix.on.k$post.df[!post.list_fix.on.k$post.df$param=='K',], 
+        post.list_fix.on.p$post.df)
+
+ggplot(bind.post, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+we can find some interesting conclusions: fix on K leads to a better estimation of alpha, fix on p leads to a better estimation of c, fix on alpha leads to a better estimation of K, fix on any other parameters cannot lead to a better estimate of mu, fix on c leads to a better estimation of p. So we can find that, K and alpha are highly correlated, p and c are highly correlated, any single parameter has little relationship to mu.
+
+Now, explore the effect of mis-specifying some of the parameters. It's known that p and c, K and alpha can help each other get better estimate, so mis-specify them and see what will happen.
+
+```{r}
+#mis-specify p to 5
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.p <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 5, 5)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.p <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 5, 5)
+)
+
+post.list_mis.p<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.p,inv.link.f_mis.p,th.init,'mis-specify p')
+```
+
+```{r}
+#mis-specify c to 2
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.c <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 2, 2),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.c <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 2, 2),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_mis.c<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.c,inv.link.f_mis.c,th.init,'mis-specify c')
+```
+
+```{r}
+#mis-specify K to 1.5
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.k <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, log(1.5), 0.0001),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.k <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, log(1.5), 0.0001),
+  alpha = \(x) inv_unif_t(x, 0, 10),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_mis.k<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.k,inv.link.f_mis.k,th.init,'mis-specify K')
+```
+
+```{r}
+#mis-specify alpha to 8
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.alpha <- list(
+  mu = \(x) gamma_t(x, 0.1, 0.1),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 8, 8),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.alpha <- list(
+  mu = \(x) inv_gamma_t(x, 0.1, 0.1),
+  K = \(x) inv_loggaus_t(x, -1, 2.03),
+  alpha = \(x) inv_unif_t(x, 8, 8),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_mis.alpha<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.alpha,inv.link.f_mis.alpha,th.init,'mis-specify alpha')
+```
+
+```{r}
+#mis-specify mu to 0.7
+set.seed(1)
+
+# set copula transformations list
+link.f_mis.mu <- list(
+  mu = \(x) gamma_t(x, 0.7*10000, 10000),
+  K = \(x) loggaus_t(x, -1, 2.03),
+  alpha = \(x) unif_t(x, 0, 10),
+  c_ = \(x) unif_t(x, 0, 10),
+  p = \(x) unif_t(x, 1, 10)
+)
+  
+# set inverse copula transformations list
+inv.link.f_mis.mu <- list(
+  mu = \(x) inv_gamma_t(x, 0.7*10000, 10000),
+  K = \(x) inv_unif_t(x, 0, 10),
+  alpha = \(x) inv_loggaus_t(x, -1, 2.03),
+  c_ = \(x) inv_unif_t(x, 0, 10),
+  p = \(x) inv_unif_t(x, 1, 10)
+)
+
+post.list_mis.mu<-generate_post.list(true.param,true.beta,T1,T2,
+  link.f_mis.mu,inv.link.f_mis.mu,th.init,'mis-specify mu')
+```
+
+```{r}
+#difference bewteen the estimate of alpha by mis-specifying mu,c,p and k
+bind.post.mis.alpha.g1 <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
+                       post.list_mis.c$post.df,post.list_mis.mu$post.df)
+bind.post.mis.alpha.g2 <- rbind(post.list_all$post.df, post.list_mis.k$post.df)
+
+post.df.mis.alpha.g1<-bind.post.mis.alpha.g1[bind.post.mis.alpha.g1$param=='alpha',]
+post.df.mis.alpha.g2<-bind.post.mis.alpha.g2[bind.post.mis.alpha.g2$param=='alpha',]
+
+gg1<-ggplot(post.df.mis.alpha.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 2.5,param = 'alpha'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.alpha.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 2.5,param = 'alpha'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of k by mis-specifying mu,c,p and alpha
+bind.post.mis.k.g1 <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
+                       post.list_mis.c$post.df,post.list_mis.mu$post.df)
+bind.post.mis.k.g2 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df)
+
+post.df.mis.k.g1<-bind.post.mis.k.g1[bind.post.mis.k.g1$param=='K',]
+post.df.mis.k.g2<-bind.post.mis.k.g2[bind.post.mis.k.g2$param=='K',]
+
+gg1<-ggplot(post.df.mis.k.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.15,param = 'K'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.k.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.15,param = 'K'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of c by mis-specifying mu,alpha,k and p
+bind.post.mis.c.g1 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.mu$post.df)
+bind.post.mis.c.g2 <- rbind(post.list_all$post.df, post.list_mis.p$post.df)
+
+post.df.mis.c.g1<-bind.post.mis.c.g1[bind.post.mis.c.g1$param=='c',]
+post.df.mis.c.g2<-bind.post.mis.c.g2[bind.post.mis.c.g2$param=='c',]
+
+gg1<-ggplot(post.df.mis.c.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.1,param = 'c'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.c.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.1,param = 'c'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of p by mis-specifying mu,alpha,k and c
+bind.post.mis.p.g1 <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.mu$post.df)
+bind.post.mis.p.g2 <- rbind(post.list_all$post.df, post.list_mis.c$post.df)
+
+post.df.mis.p.g1<-bind.post.mis.p.g1[bind.post.mis.p.g1$param=='p',]
+post.df.mis.p.g2<-bind.post.mis.p.g2[bind.post.mis.p.g2$param=='p',]
+
+gg1<-ggplot(post.df.mis.p.g1, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 1.5,param = 'p'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+gg2<-ggplot(post.df.mis.p.g2, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 1.5,param = 'p'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+
+ggarrange(gg1,gg2,ncol=1,nrow=2,align='hv')
+```
+
+```{r}
+#difference bewteen the estimate of p by mis-specifying mu,alpha,k and c
+bind.post.mis.mu <- rbind(post.list_all$post.df, post.list_mis.alpha$post.df,
+                       post.list_mis.k$post.df,post.list_mis.c$post.df,
+                       post.list_mis.p$post.df)
+
+post.df.mis.mu<-bind.post.mis.mu[bind.post.mis.mu$param=='mu',]
+
+ggplot(post.df.mis.mu, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = data.frame(x = 0.35,param = 'mu'),
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+```{r}
+# bind marginal posterior data.frames
+bind.post.mis <- rbind(post.list_all$post.df, post.list_mis.p$post.df,
+                   post.list_mis.c$post.df, 
+                  post.list_mis.k$post.df[!post.list_mis.k$post.df$param=='K',], 
+                   post.list_mis.alpha$post.df,
+                  post.list_mis.mu$post.df[!post.list_mis.mu$post.df$param=='mu',])
+
+ggplot(bind.post.mis, aes(x = x, y = y, color = cat.used)) +
+  geom_line() +
+  facet_wrap(facets = ~param, scales = "free") +
+  xlab("param") +
+  ylab("pdf") +
+  geom_vline(
+    data = df.true.param,
+    mapping = aes(xintercept = x), linetype = 2
+  )
+```
+
+Generally speaking, when mis-specifying K, all estimation of other parameters get worse, when mis-specifying p (or c), estimate of c (or p) will get worse, when mis-specifying alpha, estimate of K will get worse.
